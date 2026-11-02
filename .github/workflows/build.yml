@@ -1,0 +1,44 @@
+name: R36S-Clone-Kernel-Bau
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Werkzeuge installieren
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu bc bison flex libssl-dev libncurses-dev ccache
+          sudo ln -sf /usr/bin/ccache /usr/local/bin/aarch64-linux-gnu-gcc
+      - name: CCache laden
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-kernel-${{ github.run_id }}
+          restore-keys: ccache-kernel-
+      - name: Kernel bauen
+        run: |
+          set -euxo pipefail
+          ccache -M 3G
+          git clone --depth 1 -b arkos4clone-5.10 https://github.com/jokubasver/rockchip-kernel src
+          cd src
+          printf '%s\n' \
+            'CONFIG_DRM_PANFROST=y' \
+            '# CONFIG_MALI_BIFROST is not set' \
+            '# CONFIG_DRM_MALI is not set' \
+            '# CONFIG_WERROR is not set' \
+            '# CONFIG_SYSTEM_TRUSTED_KEYRING is not set' \
+            'CONFIG_SYSTEM_TRUSTED_KEYS=""' \
+            >> arch/arm64/configs/clone_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- clone_defconfig
+          make -j$(nproc) ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image dtbs
+      - name: Artefakte hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: r36s-kernel-${{ github.run_number }}
+          path: |
+            src/arch/arm64/boot/Image
+            src/arch/arm64/boot/dts/rockchip/
+          retention-days: 30
